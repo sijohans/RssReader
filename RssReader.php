@@ -8,18 +8,20 @@ class RssReader {
     private $lookFor = array();
     private $downloadedItems = array();
     private $toDownload = array();
+    private $logFile;
     
     function __construct($config) {
         $this->config = $config;
         $this->generateLookFor();
         $this->generateDownloadedItems();
+        $this->logFile = fopen($config['log_file'], 'a+');
     }
     
     function execute() {
-        foreach ($this->config['rss_url'] as $rssUrl) {
+        foreach ($this->config['rss_stream'] as $rssStreamName => $rssStreamInfo) {
             try {
-                $this->log(sprintf('Looking at feed %s.',$rssUrl));
-                $this->parseRssXml($this->getRssStream($rssUrl));
+                $this->log(sprintf('Looking at feed %s (%s).',$rssStreamName, $rssStreamInfo['link']));
+                $this->parseRssXml($this->getRssStream($rssStreamInfo), $rssStreamInfo);
                 $this->addTorrents();
             } catch (exception $e) {
                 $this->log($e->getMessage());
@@ -46,8 +48,8 @@ class RssReader {
         }
     }
     
-    function getRssStream($rssUrl) {
-        if (!$rssData = file_get_contents($rssUrl)) {
+    function getRssStream($rssStreamInfo) {
+        if (!$rssData = file_get_contents($rssStreamInfo['link'])) {
             throw new Exception("Could not connect to RSS feed.");
         }
         try {
@@ -58,18 +60,18 @@ class RssReader {
         }
     }
     
-    function getRssItemInfo($item) {
+    function getRssItemInfo($item, $field) {
         $n = array(3);
-        if (preg_match("/(.+)S([0-9]+)E([0-9]+).+x264/i",$item->title,$n)) {
+        if (preg_match("/(.+)S([0-9]+)E([0-9]+).+x264/i",$item->$field[0],$n)) {
             $title = strtolower(str_replace(array(' ','.'), '', $n[1]));
             $season = $n[2];
             $episode = $n[3];
             return array(
                 'title' => strtolower(str_replace(array(' ','.'), '', $n[1])),
-                'real_title' => sprintf("%s" ,$item->title),
+                'real_title' => sprintf("%s" ,$item->$field[0]),
                 'season' => sprintf("%d", $n[2]),
                 'episode' => sprintf("%d", $n[3]),
-                'link' => str_replace(' ', '%20', $item->link)
+                'link' => str_replace(' ', '%20', $item->$field[1])
             );
         }
         return false;
@@ -83,12 +85,19 @@ class RssReader {
             case 'series':
                 if (array_key_exists($item['title'], $this->lookFor)) {
                     $this->log(sprintf(" - Found %s:", $item['real_title']));
-                    if ($this->lookFor[$item['title']]['season'] < $item['season']) {
-                        $this->log(sprintf(" -- Season not of interest (%d).",
-                            $item['real_title'],
+                    if ($this->lookFor[$item['title']]['season'] > $item['season']) {
+                        $this->log(sprintf(" -- Season not of interest (lower than %d).",
                             $this->lookFor[$item['title']]['season']
                         ));
                         return false;
+                    }
+                    if (isset($this->lookFor[$item['title']]['episode'])) {
+                        if ($this->lookFor[$item['title']]['episode'] > $item['episode']) {
+                            $this->log(sprintf(" -- Episode not of interest (lower than %d).",
+                                $this->lookFor[$item['title']]['episode']
+                            ));
+                            return false;
+                        }
                     }
                     if (isset($this->downloadedItems[$item['title']][$item['season']][$item['episode']])) {
                         $this->log(sprintf(" -- Already downloaded (%s).",
@@ -100,16 +109,18 @@ class RssReader {
                     return true;
                 }
                 break;
+            case 'movie':
+                /* Movie code here */
+                break;
             default:
                 
                 break;
         }
     }
     
-    function parseRssXml($rssXml) {
-        $n = array(3);
-        foreach ($rssXml->channel->item as $item) {
-            if ($itemInfo = $this->getRssItemInfo($item)) {
+    function parseRssXml($rssXml, $rssStreamInfo) {
+        foreach ($rssXml->xpath(implode('/', $rssStreamInfo['children'])) as $item) {
+            if ($itemInfo = $this->getRssItemInfo($item, $rssStreamInfo['field'])) {
                 if ($this->lookingFor($itemInfo)) {
                     $this->toDownload[] = $itemInfo;
                 }
@@ -123,7 +134,7 @@ class RssReader {
             foreach ($this->toDownload as $item) {
                 switch ($this->config['client_type']) {
                     case 'transmission-remote':
-                        $dir = (isset($this->lookFor[$item['title']]['dir'])) ? $this->lookFor[$item['title']]['dir'] : $dir = $this->config['download_dir'];
+                        $dir = (isset($this->lookFor[$item['title']]['download_dir'])) ? $this->lookFor[$item['title']]['download_dir'] : $dir = $this->config['download_dir'];
                         $cmd = sprintf("%s -n %s:%s -a '%s' -w %s",
                             $this->config['client_path'],
                             $this->config['client_username'],
@@ -131,7 +142,7 @@ class RssReader {
                             $item['link'],
                             $dir
                         );
-                        $out = '1';
+                        $out = ' ';
                         exec($cmd, $out);
                         $this->log(sprintf("Executing %s (%s)", $cmd, $out[0]));
                         if (strpos($out[0],'success') != false) {
@@ -155,7 +166,12 @@ class RssReader {
     }
     
     function log($msg) {
-        printf("%s : %s\n", date('Y-m-d H:i:s'), $msg);
+        fprintf($this->logFile, "%s : %s\n", date('Y-m-d H:i:s'), $msg);
+    }
+    
+    function __destruct() {
+        fprintf($this->logFile, "-------------------------------------------\n");
+        fclose($this->logFile);
     }
     
 }
