@@ -92,7 +92,10 @@ class RssReader {
                         return false;
                     }
                     if (isset($this->lookFor[$item['title']]['episode'])) {
-                        if ($this->lookFor[$item['title']]['episode'] > $item['episode']) {
+                        if (
+				($this->lookFor[$item['title']]['episode'] > $item['episode']) &&
+				($this->lookFor[$item['title']]['season'] == $item['season'])) 
+			{
                             $this->log(sprintf(" -- Episode not of interest (lower than %d).",
                                 $this->lookFor[$item['title']]['episode']
                             ));
