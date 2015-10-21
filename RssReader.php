@@ -2,6 +2,19 @@
 
 include('config.php');
 
+function getSslPage($url) {
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, FALSE);
+    curl_setopt($ch, CURLOPT_HEADER, false);
+    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_REFERER, $url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, TRUE);
+    $result = curl_exec($ch);
+    curl_close($ch);
+    return $result;
+}
+
 class RssReader {
     
     private $config;
@@ -9,8 +22,11 @@ class RssReader {
     private $downloadedItems = array();
     private $toDownload = array();
     private $logFile;
+    private $dryRun = false;
     
     function __construct($config) {
+        $options = getopt('', array('dry-run'));
+		$this->dryRun = isset($options['dry-run']);
         $this->config = $config;
         $this->generateLookFor();
         $this->generateDownloadedItems();
@@ -48,8 +64,9 @@ class RssReader {
         }
     }
     
-    function getRssStream($rssStreamInfo) {
-        if (!$rssData = file_get_contents($rssStreamInfo['link'])) {
+	function getRssStream($rssStreamInfo) {
+        $rssData = getSslPage($rssStreamInfo['link']);
+        if (empty($rssData)) {
             throw new Exception("Could not connect to RSS feed.");
         }
         try {
@@ -145,13 +162,21 @@ class RssReader {
                             $item['link'],
                             $dir
                         );
-                        $out = ' ';
-                        exec($cmd, $out);
-                        $this->log(sprintf("Executing %s (%s)", $cmd, $out[0]));
-                        if (strpos($out[0],'success') != false) {
-                            $this->downloadedItems[$item['title']][$item['season']][$item['episode']] = time();
-                            $downloaded = true;
+                        
+                        if (!$this->dryRun) {
+                        	$out = ' ';
+                        	exec($cmd, $out);
+	                        if (strpos($out[0],'success') != false) {
+	                            $this->downloadedItems[$item['title']][$item['season']][$item['episode']] = time();
+	                            $downloaded = true;
+	                        }
                         }
+                        else {
+                        	$out = 'dry-run';
+                        }
+
+                        $this->log(sprintf("Executing %s (%s)", $cmd, $out[0]));
+                        
                         break;
                     default:
                         /* Watch dir code here */
