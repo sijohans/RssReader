@@ -22,12 +22,12 @@ class RssReader {
     private $downloadedItems = array();
     private $toDownload = array();
     private $logFile;
-    private $dryRun = false;
     
     function __construct($config) {
         $options = getopt('', array('dry-run'));
-		$this->dryRun = isset($options['dry-run']);
         $this->config = $config;
+        $this->config['dryRun'] = isset($options['dry-run']);
+        $this->config['quality'] = isset($this->config['quality']) ? explode(',', $this->config['quality']) : array();
         $this->generateLookFor();
         $this->generateDownloadedItems();
         $this->logFile = fopen($config['log_file'], 'a+');
@@ -79,7 +79,8 @@ class RssReader {
     
     function getRssItemInfo($item, $field) {
         $n = array(3);
-        if (preg_match("/(.+)S([0-9]+)E([0-9]+).+x264/i",$item->$field[0],$n)) {
+        $qualityPattern = implode('|', $this->config['quality']); // TODO: Implement
+        if (preg_match("/(.+)S([0-9]+)E([0-9]+).+720p.+x264/i",$item->$field[0],$n)) {
             $title = strtolower(str_replace(array(' ','.'), '', $n[1]));
             $season = $n[2];
             $episode = $n[3];
@@ -163,7 +164,7 @@ class RssReader {
                             $dir
                         );
                         
-                        if (!$this->dryRun) {
+                        if (!$this->config['dryRun']) {
                         	$out = ' ';
                         	exec($cmd, $out);
 	                        if (strpos($out[0],'success') != false) {
