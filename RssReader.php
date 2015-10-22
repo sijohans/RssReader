@@ -152,7 +152,7 @@ class RssReader {
     function addTorrents() {
         $downloaded = false;
         if (!empty($this->toDownload)) {
-            foreach ($this->toDownload as $item) {
+            foreach ($this->toDownload as $key => $item) {
                 switch ($this->config['client_type']) {
                     case 'transmission-remote':
                         $dir = (isset($this->lookFor[$item['title']]['download_dir'])) ? $this->lookFor[$item['title']]['download_dir'] : $dir = $this->config['download_dir'];
@@ -167,13 +167,18 @@ class RssReader {
                         if (!$this->config['dryRun']) {
                         	$out = ' ';
                         	exec($cmd, $out);
-	                        if (strpos($out[0],'success') != false) {
+	                        if (is_array($out) && count($out) > 0 && strpos($out[0],'success') != false) {
 	                            $this->downloadedItems[$item['title']][$item['season']][$item['episode']] = time();
 	                            $downloaded = true;
+                                unset($this->toDownload[$key]);
 	                        }
+                            else {
+                                $out = array('failed');
+                                
+                            }
                         }
                         else {
-                        	$out = 'dry-run';
+                        	$out = array('dry-run');
                         }
 
                         $this->log(sprintf("Executing %s (%s)", $cmd, $out[0]));
